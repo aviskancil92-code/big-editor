@@ -1,0 +1,1376 @@
+<!DOCTYPE html>
+<html lang="id" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FIFA Mobile .BIG Archive Editor Pro</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Pako (Zlib Decompression) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+    <!-- LZMA-JS (LZMA Decompression) -->
+    <script src="https://cdn.jsdelivr.net/npm/lzma@2.3.2/src/lzma-d-min.js"></script>
+    <!-- JSZip (Bulk ZIP Generation) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #18181b;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #3f3f46;
+            border-radius: 3px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #52525b;
+        }
+    </style>
+</head>
+<body class="bg-zinc-950 text-zinc-100 min-h-screen flex flex-col font-sans antialiased">
+
+    <!-- Header -->
+    <header class="border-b border-zinc-800 bg-zinc-900/50 backdrop-blur px-6 py-4 flex items-center justify-between shrink-0">
+        <div class="flex items-center gap-3">
+            <div class="p-2 bg-sky-500/10 text-sky-400 rounded-lg border border-sky-500/20">
+                <i data-lucide="archive" class="w-6 h-6"></i>
+            </div>
+            <div>
+                <h1 class="font-bold text-lg text-white">FIFA Mobile .BIG Editor Pro</h1>
+                <p class="text-xs text-zinc-400">Advanced Repacker & LZMA/Zlib Decompressor</p>
+            </div>
+        </div>
+        <div class="flex items-center gap-3">
+            <button id="btn-rebuild-archive" disabled onclick="rebuildAndDownload()"
+                class="hidden px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-xs font-bold rounded-lg border border-emerald-500/30 transition flex items-center gap-2 shadow-lg shadow-emerald-950/20 disabled:opacity-50">
+                <i data-lucide="package-plus" class="w-4 h-4"></i> Rebuild & Download .BIG
+            </button>
+            <div id="archive-badge" class="hidden px-3 py-1 bg-sky-500/10 text-sky-400 border border-sky-500/20 rounded-full text-xs font-semibold">
+                Loaded
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <main class="flex-1 flex overflow-hidden">
+        
+        <!-- Sidebar / File Tree -->
+        <section class="w-1/3 min-w-[320px] max-w-[450px] border-r border-zinc-800 flex flex-col bg-zinc-900/20">
+            <!-- Search, Import & Control -->
+            <div class="p-4 border-b border-zinc-800 space-y-3">
+                <div class="flex items-center gap-2">
+                    <div class="relative flex-1">
+                        <i data-lucide="search" class="absolute left-3 top-2.5 w-4 h-4 text-zinc-500"></i>
+                        <input id="search-input" type="text" placeholder="Cari file..." disabled
+                            class="w-full bg-zinc-900 border border-zinc-800 rounded-lg pl-9 pr-4 py-2 text-sm focus:outline-none focus:border-sky-500/50 disabled:opacity-50 transition" />
+                    </div>               
+                    <!-- Import File Baru Button -->
+                    <button id="btn-open-import" disabled onclick="openImportModal()" title="Import File Baru"
+                        class="p-2 bg-sky-600 hover:bg-sky-500 text-white rounded-lg transition disabled:opacity-50">
+                        <i data-lucide="file-plus" class="w-5 h-5"></i>
+                    </button>
+                </div>
+                <div class="flex gap-2">
+                    <button id="btn-unzip-packed" disabled onclick="exportAllZip(false)"
+                        class="flex-1 py-1.5 px-3 bg-zinc-800 hover:bg-zinc-700 text-[11px] font-medium rounded-md border border-zinc-700 transition flex items-center justify-center gap-1 disabled:opacity-50">
+                        <i data-lucide="download" class="w-3.5 h-3.5"></i> Export All (Packed)
+                    </button>
+                    <button id="btn-unzip-unpacked" disabled onclick="exportAllZip(true)"
+                        class="flex-1 py-1.5 px-3 bg-zinc-800 hover:bg-zinc-700 text-[11px] font-medium rounded-md border border-zinc-700 transition flex items-center justify-center gap-1 disabled:opacity-50">
+                        <i data-lucide="folder-archive" class="w-3.5 h-3.5"></i> Export All (Unpacked)
+                    </button>
+                </div>
+            </div>
+
+            <!-- Directory Tree Container -->
+            <div class="flex-1 overflow-y-auto p-4 custom-scrollbar" id="tree-container">
+                <div id="empty-state-tree" class="h-full flex flex-col items-center justify-center text-center p-6 text-zinc-500">
+                    <i data-lucide="folder-open" class="w-10 h-10 mb-2 stroke-[1.5]"></i>
+                    <p class="text-sm">Silakan unggah file .BIG untuk memuat struktur direktori.</p>
+                </div>
+                <div id="tree-root-container" class="hidden"></div>
+            </div>
+        </section>
+
+        <!-- Viewer / Details Panel -->
+        <section class="flex-1 flex flex-col bg-zinc-950 overflow-y-auto custom-scrollbar">
+            <!-- Upload Zone -->
+            <div id="dropzone" class="m-8 p-12 border-2 border-dashed border-zinc-800 hover:border-sky-500/40 rounded-xl transition flex flex-col items-center justify-center text-center cursor-pointer bg-zinc-900/10">
+                <input type="file" id="file-input" class="hidden" accept=".big">
+                <div class="p-4 bg-zinc-900 rounded-full mb-4">
+                    <i data-lucide="upload-cloud" class="w-10 h-10 text-sky-400"></i>
+                </div>
+                <h3 class="font-semibold text-zinc-200 mb-1">Pilih atau Seret File .BIG / OBB</h3>
+                <p class="text-sm text-zinc-500 max-w-xs">Mendukung format arsip game FIFA Mobile / EA BIG standar.</p>
+            </div>
+
+            <!-- Workspace View -->
+            <div id="workspace-view" class="hidden p-6 space-y-6">
+                <!-- Archive Info Banner -->
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-zinc-900/40 border border-zinc-800/80 rounded-xl">
+                    <div>
+                        <span class="text-xs text-zinc-500 block">Nama File</span>
+                        <span id="meta-filename" class="font-medium text-sm text-zinc-200 truncate block">-</span>
+                    </div>
+                    <div>
+                        <span class="text-xs text-zinc-500 block">Magic Header</span>
+                        <span id="meta-magic" class="font-medium text-sm text-zinc-200">-</span>
+                    </div>
+                    <div>
+                        <span class="text-xs text-zinc-500 block">Total File</span>
+                        <span id="meta-count" class="font-medium text-sm text-zinc-200">-</span>
+                    </div>
+                    <div>
+                        <span class="text-xs text-zinc-500 block">Ukuran Arsip</span>
+                        <span id="meta-size" class="font-medium text-sm text-zinc-200">-</span>
+                    </div>
+                </div>
+
+                <!-- Active File Detail Panel -->
+                <div id="detail-panel" class="hidden border border-zinc-800 bg-zinc-900/20 rounded-xl p-6 space-y-6">
+                    <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                        <div class="space-y-1 min-w-0">
+                            <div class="flex items-center gap-2">
+                                <span class="px-2.5 py-0.5 bg-sky-500/10 text-sky-400 border border-sky-500/20 rounded-full text-[10px] font-semibold tracking-wider uppercase">Detail File</span>
+                                <span id="modified-badge" class="hidden px-2.5 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-full text-[10px] font-semibold tracking-wider uppercase">Modified</span>
+                                <span id="new-file-badge" class="hidden px-2.5 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full text-[10px] font-semibold tracking-wider uppercase">New File</span>
+                            </div>
+                            <h2 id="detail-name" class="font-bold text-xl text-white truncate">-</h2>
+                            <p id="detail-path" class="text-xs text-zinc-500 font-mono truncate">-</p>
+                        </div>
+                        <div class="flex flex-wrap gap-2 shrink-0">
+                            <!-- Replace File Action -->
+                            <button id="btn-replace-file"
+                                class="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-xs font-semibold rounded-lg transition flex items-center gap-1.5 text-white">
+                                <i data-lucide="file-up" class="w-4 h-4"></i> Replace File
+                            </button>
+                            <input type="file" id="replace-file-input" class="hidden" />
+                            
+                            <button id="btn-export-packed"
+                                class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold rounded-lg border border-zinc-700 transition flex items-center gap-1.5">
+                                <i data-lucide="download-cloud" class="w-4 h-4"></i> Save Packed
+                            </button>
+                            <button id="btn-export-unpacked"
+                                class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold rounded-lg border border-zinc-700 transition flex items-center gap-1.5">
+                                <i data-lucide="folder-archive" class="w-4 h-4"></i> Save Unpacked
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                        <div class="bg-zinc-900/30 p-3 rounded-lg border border-zinc-800/50">
+                            <span class="text-[10px] text-zinc-500 block uppercase">Offset Byte</span>
+                            <span id="detail-offset" class="font-mono text-sm text-zinc-300">-</span>
+                        </div>
+                        <div class="bg-zinc-900/30 p-3 rounded-lg border border-zinc-800/50">
+                            <span class="text-[10px] text-zinc-500 block uppercase">Ukuran Packed</span>
+                            <span id="detail-packed-size" class="font-mono text-sm text-zinc-300">-</span>
+                        </div>
+                        <div class="bg-zinc-900/30 p-3 rounded-lg border border-zinc-800/50">
+                            <span class="text-[10px] text-zinc-500 block uppercase">Tipe Header / Mode</span>
+                            <span id="detail-type" class="font-mono text-sm text-zinc-300">-</span>
+                        </div>
+                        <div class="bg-zinc-900/30 p-3 rounded-lg border border-zinc-800/50">
+                            <span class="text-[10px] text-zinc-500 block uppercase">Chunk Size</span>
+                            <span id="detail-chunk-size" class="font-mono text-sm text-zinc-300">-</span>
+                        </div>
+                    </div>
+
+                    <!-- Hex Preview Component -->
+                    <div class="space-y-2">
+                        <h4 class="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Hex Preview (First 128 Bytes - Decompressed output if compressed)</h4>
+                        <div class="bg-zinc-950 border border-zinc-800/80 rounded-lg p-4 font-mono text-[11px] md:text-xs leading-relaxed overflow-x-auto text-zinc-400 custom-scrollbar select-text">
+                            <pre id="hex-preview-content" class="whitespace-pre">No file selected</pre>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="no-selection-panel" class="flex flex-col items-center justify-center p-12 text-zinc-500 border border-zinc-800/50 border-dashed rounded-xl">
+                    <i data-lucide="file-warning" class="w-8 h-8 mb-2"></i>
+                    <p class="text-sm">Silakan pilih salah satu file dari direktori sebelah kiri untuk melihat informasi detail atau mengganti isinya.</p>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Modal Loading Progress -->
+    <div id="loading-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center hidden">
+        <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-6 max-w-md w-full mx-4 shadow-2xl space-y-4">
+            <div class="flex items-center gap-3">
+                <div class="animate-spin text-sky-400">
+                    <i data-lucide="loader" class="w-6 h-6"></i>
+                </div>
+                <h3 class="font-bold text-lg text-white">Memproses Arsip</h3>
+            </div>
+            <p id="loading-msg" class="text-sm text-zinc-400">Sedang membaca file...</p>
+            <div class="w-full bg-zinc-800 h-2 rounded-full overflow-hidden">
+                <div id="loading-bar" class="bg-sky-500 h-full w-0 transition-all duration-300"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Import File Baru Modal -->
+    <div id="import-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center hidden">
+        <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-6 max-w-md w-full mx-4 shadow-2xl space-y-4">
+            <div class="flex items-center gap-3 border-b border-zinc-800 pb-3">
+                <div class="text-sky-400">
+                    <i data-lucide="file-plus" class="w-6 h-6"></i>
+                </div>
+                <h3 class="font-bold text-lg text-white">Import File Baru ke .BIG</h3>
+            </div>
+            <div class="space-y-3">
+                <div>
+                    <label class="text-[10px] text-zinc-400 block mb-1 font-semibold uppercase tracking-wider">Path Virtual dalam Arsip</label>
+                    <input id="import-path" type="text" placeholder="Contoh: data/sceneassets/faces/face_12345.rx3" 
+                        class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-sky-500/50" />
+                    <span class="text-[10px] text-zinc-500 mt-1 block">Pastikan menggunakan garis miring miring (/) dan hindari spasi.</span>
+                </div>
+                <div>
+                    <label class="text-[10px] text-zinc-400 block mb-1 font-semibold uppercase tracking-wider">Pilih Berkas Modifikasi</label>
+                    <input id="import-file-selector" type="file" class="hidden" />
+                    <button onclick="document.getElementById('import-file-selector').click()" 
+                        class="w-full py-2.5 bg-zinc-850 hover:bg-zinc-800 border border-zinc-800 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition text-zinc-300">
+                        <i data-lucide="upload" class="w-4 h-4 text-zinc-400"></i> <span id="import-filename-label">Pilih Berkas...</span>
+                    </button>
+                </div>
+            </div>
+            <div class="flex gap-2 justify-end pt-4 border-t border-zinc-800">
+                <button onclick="closeImportModal()" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold rounded-lg transition">Batal</button>
+                <button onclick="submitImportFile()" class="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-xs font-semibold text-white rounded-lg transition">Import Berkas</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // DOM Elements
+        const dropzone = document.getElementById('dropzone');
+        const fileInput = document.getElementById('file-input');
+        const workspaceView = document.getElementById('workspace-view');
+        const emptyStateTree = document.getElementById('empty-state-tree');
+        const treeRootContainer = document.getElementById('tree-root-container');
+        const searchInput = document.getElementById('search-input');
+        const loadingModal = document.getElementById('loading-modal');
+        const loadingMsg = document.getElementById('loading-msg');
+        const loadingBar = document.getElementById('loading-bar');
+        
+        const btnUnzipPacked = document.getElementById('btn-unzip-packed');
+        const btnUnzipUnpacked = document.getElementById('btn-unzip-unpacked');
+        const btnRebuildArchive = document.getElementById('btn-rebuild-archive');
+        const btnOpenImport = document.getElementById('btn-open-import');
+
+        const btnReplaceFile = document.getElementById('btn-replace-file');
+        const replaceFileInput = document.getElementById('replace-file-input');
+
+        // Modal Elements
+        const importModal = document.getElementById('import-modal');
+        const importPathInput = document.getElementById('import-path');
+        const importFileSelector = document.getElementById('import-file-selector');
+        const importFilenameLabel = document.getElementById('import-filename-label');
+
+        // State
+        let bigFileBytes = null;
+        let flatFileList = [];
+        let treeRoot = { name: "Root", type: "dir", children: {} };
+        let activeSelectedNode = null;
+        let currentBigFileName = "archive.big";
+        let originalMagic = "BIG4";
+        let tempImportedBytes = null;
+
+        // Initialize Lucide Icons
+        lucide.createIcons();
+
+        // Drag & Drop Handlers
+        dropzone.addEventListener('click', () => fileInput.click());
+        dropzone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropzone.classList.add('border-sky-500', 'bg-sky-500/5');
+        });
+        dropzone.addEventListener('dragleave', () => {
+            dropzone.classList.remove('border-sky-500', 'bg-sky-500/5');
+        });
+        dropzone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropzone.classList.remove('border-sky-500', 'bg-sky-500/5');
+            if (e.dataTransfer.files.length > 0) {
+                handleFile(e.dataTransfer.files[0]);
+            }
+        });
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFile(e.target.files[0]);
+            }
+        });
+
+        // Replace File Action
+        btnReplaceFile.addEventListener('click', () => replaceFileInput.click());
+        replaceFileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0 && activeSelectedNode) {
+                handleFileReplacement(e.target.files[0]);
+            }
+        });
+
+        // Search Handlers
+        searchInput.addEventListener('input', (e) => {
+            const query = e.target.value.trim();
+            if (query.length > 0) {
+                renderSearchResults(query);
+            } else {
+                renderTreeRoot();
+            }
+        });
+
+        // Modal Action: Open
+        function openImportModal() {
+            importModal.classList.remove('hidden');
+            importPathInput.value = "";
+            importFilenameLabel.innerText = "Pilih Berkas...";
+            tempImportedBytes = null;
+            importFileSelector.value = "";
+        }
+
+        // Modal Action: Close
+        function closeImportModal() {
+            importModal.classList.add('hidden');
+        }
+
+        // Handle File Selection inside Import Modal
+        importFileSelector.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                const file = e.target.files[0];
+                importFilenameLabel.innerText = file.name;
+                
+                if (!importPathInput.value.trim()) {
+                    importPathInput.value = `data/sceneassets/faces/${file.name}`;
+                }
+
+                const reader = new FileReader();
+                reader.onload = function(evt) {
+                    tempImportedBytes = new Uint8Array(evt.target.result);
+                };
+                reader.readAsArrayBuffer(file);
+            }
+        });
+
+        // Submit newly imported file
+        function submitImportFile() {
+            const targetPath = importPathInput.value.trim().replace(/\\/g, '/');
+            if (!targetPath) {
+                alert("Masukkan target path dalam arsip terlebih dahulu.");
+                return;
+            }
+            if (!tempImportedBytes) {
+                alert("Pilih berkas modifikasi fisik terlebih dahulu.");
+                return;
+            }
+
+            const duplicate = flatFileList.find(item => item.data_path.toLowerCase() === targetPath.toLowerCase());
+            if (duplicate) {
+                const override = confirm("Path virtual tersebut sudah ada di dalam arsip. Apakah Anda ingin mereplacenya?");
+                if (!override) return;
+                
+                duplicate.data = tempImportedBytes;
+                duplicate.data_size = tempImportedBytes.length;
+                duplicate.isReplaced = true;
+                duplicate.head = 'Unknown (Mod)';
+                duplicate.chunk_size = tempImportedBytes.length;
+
+                selectFile(duplicate);
+                renderTreeRoot();
+                closeImportModal();
+                return;
+            }
+
+            const mps = targetPath.split("/");
+            const newFileItem = {
+                data_off: 0,
+                data_size: tempImportedBytes.length,
+                mps,
+                data_path: targetPath,
+                index: flatFileList.length,
+                data: tempImportedBytes,
+                isReplaced: false,
+                isNew: true,
+                head: 'New (Inject)',
+                chunk_size: tempImportedBytes.length
+            };
+
+            flatFileList.push(newFileItem);
+
+            let current = treeRoot;
+            for (let j = 0; j < newFileItem.mps.length; j++) {
+                const part = newFileItem.mps[j];
+                if (j === newFileItem.mps.length - 1) {
+                    current.children[part] = newFileItem;
+                } else {
+                    if (!current.children[part]) {
+                        current.children[part] = {
+                            name: part,
+                            type: "dir",
+                            children: {}
+                        };
+                    }
+                    current = current.children[part];
+                }
+            }
+
+            document.getElementById('meta-count').innerText = flatFileList.length.toLocaleString();
+
+            renderTreeRoot();
+            selectFile(newFileItem);
+            closeImportModal();
+        }
+
+        // Helper: Format Bytes
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        // Reader Class for Binary Manipulation
+        class BinReader {
+            constructor(arrayBuffer) {
+                this.view = new DataView(arrayBuffer);
+                this.bytes = new Uint8Array(arrayBuffer);
+                this.pos = 0;
+            }
+
+            readBytes(len) {
+                const sub = this.bytes.subarray(this.pos, this.pos + len);
+                this.pos += len;
+                return sub;
+            }
+
+            readUint32() {
+                const val = this.view.getUint32(this.pos, false); // Big Endian
+                this.pos += 4;
+                return val;
+            }
+
+            readStringNullTerminated() {
+                let chars = [];
+                for (let i = 0; i < 128; i++) {
+                    if (this.pos >= this.bytes.length) break;
+                    const b = this.bytes[this.pos++];
+                    if (b === 0) break;
+                    chars.push(String.fromCharCode(b));
+                }
+                return chars.join('');
+            }
+        }
+
+        // Parsing .BIG File
+        function handleFile(file) {
+            currentBigFileName = file.name;
+            showLoading("Membaca file ke dalam memori...", 20);
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const arrayBuffer = e.target.result;
+                    bigFileBytes = new Uint8Array(arrayBuffer);
+                    parseBig(arrayBuffer, file.name);
+                } catch(err) {
+                    alert("Gagal membaca file .big: " + err.message);
+                    hideLoading();
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function showLoading(msg, progress) {
+            loadingModal.classList.remove('hidden');
+            loadingMsg.innerText = msg;
+            loadingBar.style.width = `${progress}%`;
+        }
+
+        function hideLoading() {
+            loadingModal.classList.add('hidden');
+        }
+
+        function parseBig(arrayBuffer, filename) {
+            showLoading("Memproses header arsip...", 40);
+            const reader = new BinReader(arrayBuffer);
+
+            // Read BIG Header
+            const headerBytes = reader.readBytes(4);
+            originalMagic = String.fromCharCode(...headerBytes);
+            const full_size = reader.readUint32();
+            const file_count = reader.readUint32();
+            const def_size = reader.readUint32();
+
+            flatFileList = [];
+            treeRoot = { name: "Root", type: "dir", children: {} };
+
+            showLoading(`Membaca indeks tabel (${file_count} file)...`, 60);
+
+            // Load Index
+            for (let i = 0; i < file_count; i++) {
+                const data_off = reader.readUint32();
+                const data_size = reader.readUint32();
+                const data_name = reader.readStringNullTerminated();
+                const mps = data_name.replace(/\\/g, '/').split("/");
+
+                flatFileList.push({
+                    data_off,
+                    data_size,
+                    mps,
+                    data_path: data_name,
+                    index: i,
+                    data: null,
+                    isReplaced: false,
+                    isNew: false
+                });
+            }
+
+            // Determine data head types (Compression Mode Detector)
+            showLoading("Memverifikasi tipe kompresi file...", 80);
+            for (let i = 0; i < file_count; i++) {
+                const item = flatFileList[i];
+                reader.pos = item.data_off;
+                
+                if (reader.pos + 8 <= reader.bytes.length) {
+                    const headVal = reader.readUint32();
+                    reader.pos = item.data_off; // reset
+                    const bytes8 = reader.readBytes(8);
+                    let magic = "";
+                    for (let b of bytes8) magic += String.fromCharCode(b);
+
+                    if (headVal === 1161909062) { // 0x45415346 -> 'EASF'
+                        item.head = 'EASF';
+                        reader.pos = item.data_off + 4;
+                        item.chunk_size = reader.readUint32();
+                    } else if (magic === "chunkzip") {
+                        item.head = 'Chunkzip';
+                        item.chunk_size = item.data_size;
+                    } else if (magic === "chunlzma") {
+                        item.head = 'Chunklzma';
+                        item.chunk_size = item.data_size;
+                    } else {
+                        item.head = 'Raw';
+                        item.chunk_size = item.data_size;
+                    }
+                } else {
+                    item.head = 'Unknown';
+                    item.chunk_size = 0;
+                }
+
+                // Build Virtual Tree
+                let current = treeRoot;
+                for (let j = 0; j < item.mps.length; j++) {
+                    const part = item.mps[j];
+                    if (j === item.mps.length - 1) {
+                        current.children[part] = item;
+                    } else {
+                        if (!current.children[part]) {
+                            current.children[part] = {
+                                name: part,
+                                type: "dir",
+                                children: {}
+                            };
+                        }
+                        current = current.children[part];
+                    }
+                }
+            }
+
+            // Update UI Metadata Banner
+            document.getElementById('meta-filename').innerText = filename;
+            document.getElementById('meta-filename').title = filename;
+            document.getElementById('meta-magic').innerText = originalMagic;
+            document.getElementById('meta-count').innerText = file_count.toLocaleString();
+            document.getElementById('meta-size').innerText = formatBytes(arrayBuffer.byteLength);
+
+            // UI Adjustments
+            document.getElementById('archive-badge').classList.remove('hidden');
+            dropzone.classList.add('hidden');
+            workspaceView.classList.remove('hidden');
+            emptyStateTree.classList.add('hidden');
+            treeRootContainer.classList.remove('hidden');
+            searchInput.removeAttribute('disabled');
+            
+            btnUnzipPacked.removeAttribute('disabled');
+            btnUnzipUnpacked.removeAttribute('disabled');
+            btnRebuildArchive.removeAttribute('disabled');
+            btnRebuildArchive.classList.remove('hidden');
+            btnOpenImport.removeAttribute('disabled');
+
+            renderTreeRoot();
+            hideLoading();
+        }
+
+        // Lazy Slicing: Only get file bytes when requested to save RAM
+        function getFileBytes(item) {
+            if (item.data) {
+                return item.data;
+            }
+            return bigFileBytes.subarray(item.data_off, item.data_off + item.data_size);
+        }
+
+        // Handle File Replacement
+        function handleFileReplacement(file) {
+            showLoading("Membaca file pengganti...", 50);
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const arrayBuffer = e.target.result;
+                    const replacedData = new Uint8Array(arrayBuffer);
+
+                    // Update State
+                    activeSelectedNode.data = replacedData;
+                    activeSelectedNode.data_size = replacedData.length;
+                    activeSelectedNode.isReplaced = true;
+                    activeSelectedNode.head = 'Unknown (Mod)';
+                    activeSelectedNode.chunk_size = replacedData.length;
+
+                    // Update Flat List Reference
+                    const matchedItem = flatFileList.find(item => item.data_path === activeSelectedNode.data_path);
+                    if (matchedItem) {
+                        matchedItem.data = replacedData;
+                        matchedItem.data_size = replacedData.length;
+                        matchedItem.isReplaced = true;
+                        matchedItem.head = 'Unknown (Mod)';
+                        matchedItem.chunk_size = replacedData.length;
+                    }
+
+                    // Update UI Detail View
+                    selectFile(activeSelectedNode);
+                    
+                    // Mark visual element inside list as modified
+                    updateSelectedFileDOM(activeSelectedNode);
+                    
+                    hideLoading();
+                } catch(err) {
+                    alert("Gagal meremove/ganti file: " + err.message);
+                    hideLoading();
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function updateSelectedFileDOM(node) {
+            const selectedEl = document.querySelector('.file-selected');
+            if (selectedEl) {
+                const sizeEl = selectedEl.querySelector('.text-xs, font-mono');
+                if (sizeEl) {
+                    sizeEl.innerText = formatBytes(node.data_size);
+                }
+                if (!selectedEl.querySelector('.modified-indicator')) {
+                    const textDiv = selectedEl.querySelector('span.truncate');
+                    if (textDiv) {
+                        textDiv.innerHTML = `${node.mps[node.mps.length - 1]} <span class="modified-indicator text-[9px] bg-amber-500/20 text-amber-400 px-1 rounded ml-1 border border-amber-500/30 uppercase font-bold">Mod</span>`;
+                    }
+                }
+            }
+        }
+
+        // Lazy Rendering of File Tree
+        function renderTreeRoot() {
+            treeRootContainer.innerHTML = '';
+            renderLevel(treeRoot, treeRootContainer, "");
+            lucide.createIcons();
+        }
+
+        function createDirElement(name, node, path) {
+            const li = document.createElement('li');
+            li.className = "text-sm text-zinc-300";
+            
+            const itemDiv = document.createElement('div');
+            itemDiv.className = "flex items-center gap-2 hover:bg-zinc-800/60 p-1.5 rounded cursor-pointer transition select-none border border-transparent";
+            itemDiv.innerHTML = `
+                <i data-lucide="chevron-right" class="w-4 h-4 text-zinc-500 transition-transform duration-200" id="arrow-${path}"></i>
+                <i data-lucide="folder" class="w-4 h-4 text-amber-500 fill-amber-500/20"></i>
+                <span class="font-medium text-zinc-200">${name}</span>
+            `;
+            
+            const subContainer = document.createElement('div');
+            subContainer.className = "hidden pl-4 border-l border-zinc-800/80 space-y-1 my-1";
+            
+            let rendered = false;
+            itemDiv.onclick = (e) => {
+                e.stopPropagation();
+                const arrow = itemDiv.querySelector(`#arrow-${CSS.escape(path)}`);
+                if (subContainer.classList.contains('hidden')) {
+                    subContainer.classList.remove('hidden');
+                    if (arrow) arrow.style.transform = "rotate(90deg)";
+                    if (!rendered) {
+                        renderLevel(node, subContainer, path);
+                        rendered = true;
+                        lucide.createIcons();
+                    }
+                } else {
+                    subContainer.classList.add('hidden');
+                    if (arrow) arrow.style.transform = "rotate(0deg)";
+                }
+            };
+            
+            li.appendChild(itemDiv);
+            li.appendChild(subContainer);
+            return li;
+        }
+
+        function createFileElement(name, node) {
+            const li = document.createElement('li');
+            li.className = "text-sm text-zinc-300";
+            
+            const modBadge = node.isReplaced ? `<span class="modified-indicator text-[9px] bg-amber-500/20 text-amber-400 px-1 rounded ml-1 border border-amber-500/30 uppercase font-bold">Mod</span>` : '';
+            const newBadge = node.isNew ? `<span class="new-indicator text-[9px] bg-emerald-500/20 text-emerald-400 px-1 rounded ml-1 border border-emerald-500/30 uppercase font-bold">New</span>` : '';
+            
+            const itemDiv = document.createElement('div');
+            itemDiv.className = "flex items-center gap-2 hover:bg-zinc-800/60 p-1.5 rounded cursor-pointer transition select-none border border-transparent";
+            itemDiv.innerHTML = `
+                <i data-lucide="file" class="w-4 h-4 text-sky-400"></i>
+                <div class="flex-1 flex justify-between items-center pr-2 min-w-0">
+                    <span class="truncate pr-2 font-medium" title="${name}">${name}${modBadge}${newBadge}</span>
+                    <span class="text-[10px] text-zinc-500 shrink-0 font-mono">${formatBytes(node.data_size)}</span>
+                </div>
+            `;
+            itemDiv.onclick = (e) => {
+                e.stopPropagation();
+                selectFile(node);
+                document.querySelectorAll('.file-selected').forEach(el => {
+                    el.classList.remove('file-selected', 'bg-sky-500/10', 'border-sky-500/30');
+                    el.classList.add('border-transparent');
+                });
+                itemDiv.classList.add('file-selected', 'bg-sky-500/10', 'border-sky-500/30');
+                itemDiv.classList.remove('border-transparent');
+            };
+            li.appendChild(itemDiv);
+            return li;
+        }
+
+        function renderLevel(parentNode, container, parentPath) {
+            const keys = Object.keys(parentNode.children).sort((a, b) => {
+                const nodeA = parentNode.children[a];
+                const nodeB = parentNode.children[b];
+                
+                const typeA = nodeA.type || (nodeA.children ? "dir" : "file");
+                const typeB = nodeB.type || (nodeB.children ? "dir" : "file");
+
+                if (typeA === typeB) return a.localeCompare(b);
+                return typeA === "dir" ? -1 : 1;
+            });
+            
+            const ul = document.createElement('ul');
+            ul.className = "space-y-1";
+            
+            keys.forEach(key => {
+                const child = parentNode.children[key];
+                const currentPath = parentPath ? `${parentPath}/${key}` : key;
+                const childType = child.type || (child.children ? "dir" : "file");
+
+                if (childType === "dir") {
+                    ul.appendChild(createDirElement(key, child, currentPath));
+                } else {
+                    ul.appendChild(createFileElement(key, child));
+                }
+            });
+            
+            container.appendChild(ul);
+        }
+
+        // Search Result View
+        function renderSearchResults(query) {
+            treeRootContainer.innerHTML = '';
+            const q = query.toLowerCase();
+            const filtered = flatFileList.filter(item => item.data_path.toLowerCase().includes(q));
+
+            if (filtered.length === 0) {
+                treeRootContainer.innerHTML = `<div class="text-zinc-500 text-sm p-4 text-center">Tidak ada kecocokan.</div>`;
+                return;
+            }
+
+            const ul = document.createElement('ul');
+            ul.className = "space-y-1";
+
+            filtered.slice(0, 150).forEach(item => {
+                const name = item.mps[item.mps.length - 1];
+                const li = document.createElement('li');
+                li.className = "text-sm text-zinc-300";
+
+                const modBadge = item.isReplaced ? `<span class="modified-indicator text-[9px] bg-amber-500/20 text-amber-400 px-1 rounded ml-1 border border-amber-500/30 uppercase font-bold">Mod</span>` : '';
+                const newBadge = item.isNew ? `<span class="new-indicator text-[9px] bg-emerald-500/20 text-emerald-400 px-1 rounded ml-1 border border-emerald-500/30 uppercase font-bold">New</span>` : '';
+
+                const itemDiv = document.createElement('div');
+                itemDiv.className = "flex items-center gap-2 hover:bg-zinc-800/60 p-2 rounded cursor-pointer transition select-none border border-transparent";
+                itemDiv.innerHTML = `
+                    <i data-lucide="file" class="w-4 h-4 text-sky-400 shrink-0"></i>
+                    <div class="flex-1 min-w-0">
+                        <div class="text-zinc-200 truncate font-medium">${name}${modBadge}${newBadge}</div>
+                        <div class="text-[10px] text-zinc-500 truncate font-mono">${item.data_path}</div>
+                    </div>
+                    <span class="text-xs text-zinc-500 font-mono shrink-0 ml-2">${formatBytes(item.data_size)}</span>
+                `;
+                itemDiv.onclick = () => {
+                    selectFile(item);
+                    document.querySelectorAll('.file-selected').forEach(el => {
+                        el.classList.remove('file-selected', 'bg-sky-500/10', 'border-sky-500/30');
+                        el.classList.add('border-transparent');
+                    });
+                    itemDiv.classList.add('file-selected', 'bg-sky-500/10', 'border-sky-500/30');
+                    itemDiv.classList.remove('border-transparent');
+                };
+                li.appendChild(itemDiv);
+                ul.appendChild(li);
+            });
+
+            if (filtered.length > 150) {
+                const infoLi = document.createElement('li');
+                infoLi.className = "text-xs text-zinc-500 text-center italic p-2";
+                infoLi.innerText = `Menampilkan 150 dari ${filtered.length} file. Saring pencarian Anda.`;
+                ul.appendChild(infoLi);
+            }
+
+            treeRootContainer.appendChild(ul);
+            lucide.createIcons();
+        }
+
+        // =====================================================================
+        //  ECompressionMode DECOMPRESSION MODULES (chunkzip & chunklzma)
+        // =====================================================================
+        
+        // Zlib Chunkzip Decompressor (Raw Deflate Chunks)
+        function decompressChunkzip(subBytes) {
+            if (subBytes.length < 8) return subBytes;
+            let magic = "";
+            for (let i = 0; i < 8; i++) {
+                magic += String.fromCharCode(subBytes[i]);
+            }
+            if (magic !== "chunkzip") return subBytes;
+
+            try {
+                const view = new DataView(subBytes.buffer, subBytes.byteOffset, subBytes.byteLength);
+                let localPos = 20;
+                const sec_num = view.getUint32(localPos, false);
+                localPos += 4;
+                localPos += 8;
+
+                let decompressedParts = [];
+                for (let i = 0; i < sec_num; i++) {
+                    // Align position relative to the absolute address space in RAM
+                    const absolutePos = subBytes.byteOffset + localPos;
+                    const align = absolutePos % 4;
+                    if (align !== 0) {
+                        localPos += (4 - align);
+                    }
+
+                    let sec_len = 0;
+                    while (true) {
+                        if (localPos + 4 > subBytes.byteLength) break;
+                        sec_len = view.getUint32(localPos, false);
+                        localPos += 4;
+                        if (sec_len !== 0) break;
+                    }
+
+                    localPos += 4; // Skip signature separator '00 00 00 01'
+
+                    if (localPos + sec_len > subBytes.byteLength) {
+                        console.error("Zlib Chunk size out of boundary.");
+                        break;
+                    }
+
+                    const compressedPart = subBytes.subarray(localPos, localPos + sec_len);
+                    localPos += sec_len;
+
+                    try {
+                        const decompressed = pako.inflateRaw(compressedPart);
+                        decompressedParts.push(decompressed);
+                    } catch (err) {
+                        console.error("zlib inflate error, corrupt section:", err);
+                    }
+                }
+
+                if (decompressedParts.length === 0) return new Uint8Array(0);
+                let totalLen = decompressedParts.reduce((acc, p) => acc + p.length, 0);
+                let out = new Uint8Array(totalLen);
+                let curOffset = 0;
+                for (let part of decompressedParts) {
+                    out.set(part, curOffset);
+                    curOffset += part.length;
+                }
+                return out;
+            } catch (err) {
+                console.error("Chunkzip parsing error:", err);
+                return subBytes;
+            }
+        }
+
+        // LZMA Chunklzma Decompressor (Standard Container Reconstructor)
+        async function decompressChunklzma(subBytes) {
+            if (subBytes.length < 40) return subBytes;
+
+            let magic = "";
+            for (let i = 0; i < 8; i++) magic += String.fromCharCode(subBytes[i]);
+
+            if (magic !== "chunlzma") {
+                return subBytes;
+            }
+
+            try {
+                const view = new DataView(subBytes.buffer, subBytes.byteOffset, subBytes.byteLength);
+                const fullUncompressedSize = view.getUint32(12, false);
+                const chunksCount = view.getUint32(20, false);
+                
+                let tocOffset = 40;
+                const chunkMetaList = [];
+                for (let i = 0; i < chunksCount; i++) {
+                    const compSize = view.getUint32(tocOffset, false);
+                    const uncompSize = view.getUint32(tocOffset + 4, false);
+                    chunkMetaList.push({ compSize, uncompSize });
+                    tocOffset += 8;
+                }
+
+                let currentPayloadPos = (tocOffset + 15) & ~15;
+                const decompressedChunks = [];
+
+                for (let i = 0; i < chunksCount; i++) {
+                    const meta = chunkMetaList[i];
+                    const compressedChunk = subBytes.subarray(currentPayloadPos, currentPayloadPos + meta.compSize);
+                    
+                    const lzmaProperties = compressedChunk.subarray(0, 5);
+                    const rawCompressedData = compressedChunk.subarray(5);
+
+                    // Reconstruct standard .lzma 13-byte container header
+                    const reconstructedLzma = new Uint8Array(13 + rawCompressedData.length);
+                    reconstructedLzma.set(lzmaProperties, 0);
+                    
+                    let tempSize = meta.uncompSize;
+                    for (let j = 0; j < 8; j++) {
+                        reconstructedLzma[5 + j] = tempSize & 0xFF;
+                        tempSize = Math.floor(tempSize / 256);
+                    }
+                    reconstructedLzma.set(rawCompressedData, 13);
+
+                    const decompressedChunkBytes = await new Promise((resolve, reject) => {
+                        if (typeof LZMA === 'undefined') {
+                            reject(new Error("LZMA-JS library not loaded"));
+                            return;
+                        }
+                        LZMA.decompress(Array.from(reconstructedLzma), (result, error) => {
+                            if (error) reject(error);
+                            else resolve(new Uint8Array(result));
+                        });
+                    });
+
+                    decompressedChunks.push(decompressedChunkBytes);
+                    currentPayloadPos += meta.compSize;
+                    currentPayloadPos = (currentPayloadPos + 15) & ~15;
+                }
+
+                const finalUncompressedFile = new Uint8Array(fullUncompressedSize);
+                let writeOffset = 0;
+                decompressedChunks.forEach(chunk => {
+                    finalUncompressedFile.set(chunk, writeOffset);
+                    writeOffset += chunk.length;
+                });
+
+                return finalUncompressedFile;
+            } catch (err) {
+                console.error("Gagal dekompresi chunklzma:", err);
+                return subBytes;
+            }
+        }
+
+        // Unified Decompression Router
+        async function getDecompressedBytes(item) {
+            const rawBytes = getFileBytes(item);
+            if (rawBytes.length < 8) return rawBytes;
+
+            let magic = "";
+            for (let i = 0; i < 8; i++) {
+                magic += String.fromCharCode(rawBytes[i]);
+            }
+
+            if (magic === "chunkzip") {
+                return decompressChunkzip(rawBytes);
+            } else if (magic === "chunlzma") {
+                return await decompressChunklzma(rawBytes);
+            }
+
+            return rawBytes; // Raw Uncompressed
+        }
+
+        // Handle Selected File View (Async)
+        async function selectFile(node) {
+            activeSelectedNode = node;
+            document.getElementById('no-selection-panel').classList.add('hidden');
+            document.getElementById('detail-panel').classList.remove('hidden');
+
+            const name = node.mps[node.mps.length - 1];
+            document.getElementById('detail-name').innerText = name;
+            document.getElementById('detail-path').innerText = node.data_path;
+            
+            const modBadge = document.getElementById('modified-badge');
+            const newBadge = document.getElementById('new-file-badge');
+            
+            if (node.isReplaced) {
+                modBadge.classList.remove('hidden');
+                newBadge.classList.add('hidden');
+                document.getElementById('detail-offset').innerText = `Offset Recomputed upon Rebuild`;
+            } else if (node.isNew) {
+                modBadge.classList.add('hidden');
+                newBadge.classList.remove('hidden');
+                document.getElementById('detail-offset').innerText = `Offset Recomputed upon Rebuild`;
+            } else {
+                modBadge.classList.add('hidden');
+                newBadge.classList.add('hidden');
+                document.getElementById('detail-offset').innerText = `0x${node.data_off.toString(16).toUpperCase()} (${node.data_off})`;
+            }
+
+            document.getElementById('detail-packed-size').innerText = `${formatBytes(node.data_size)} (${node.data_size} Bytes)`;
+            document.getElementById('detail-chunk-size').innerText = node.chunk_size ? `0x${node.chunk_size.toString(16).toUpperCase()}` : '-';
+
+            // Auto-detect dynamic status
+            const rawBytes = getFileBytes(node);
+            let compressionStatus = "Uncompressed";
+            if (rawBytes.length >= 8) {
+                let magic = "";
+                for (let i = 0; i < 8; i++) magic += String.fromCharCode(rawBytes[i]);
+                if (magic === "chunkzip" || magic === "chunlzma") {
+                    compressionStatus = magic.toUpperCase();
+                }
+            }
+            document.getElementById('detail-type').innerText = `${node.head} (${compressionStatus})`;
+
+            // Load and decompress on the fly for HEX Preview
+            const fileBytes = await getDecompressedBytes(node);
+            document.getElementById('hex-preview-content').innerHTML = generateHexPreview(fileBytes);
+
+            document.getElementById('btn-export-packed').onclick = () => triggerDownload(node, false);
+            document.getElementById('btn-export-unpacked').onclick = () => triggerDownload(node, true);
+        }
+
+        // Single Download Trigger (Async)
+        async function triggerDownload(node, unpacked) {
+            let outBytes;
+            if (node.isReplaced || node.isNew) {
+                outBytes = node.data;
+            } else {
+                if (unpacked) {
+                    outBytes = await getDecompressedBytes(node);
+                } else {
+                    outBytes = getFileBytes(node);
+                }
+            }
+
+            const blob = new Blob([outBytes], { type: "application/octet-stream" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = node.mps[node.mps.length - 1];
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        // Global Zip Export Handler (Async)
+        async function exportAllZip(unpacked) {
+            if (!flatFileList.length) return;
+            const zip = new JSZip();
+            
+            showLoading("Mengumpulkan data arsip...", 10);
+            
+            const batchSize = 100;
+            for (let i = 0; i < flatFileList.length; i++) {
+                const f = flatFileList[i];
+                let outBytes;
+                
+                if (f.isReplaced || f.isNew) {
+                    outBytes = f.data;
+                } else {
+                    if (unpacked) {
+                        outBytes = await getDecompressedBytes(f);
+                    } else {
+                        outBytes = getFileBytes(f);
+                    }
+                }
+
+                let zipPath = f.data_path.replace(/\\/g, "/");
+                if (zipPath.startsWith("/")) zipPath = zipPath.substring(1);
+
+                zip.file(zipPath, outBytes);
+
+                if (i % batchSize === 0) {
+                    const pct = Math.round((i / flatFileList.length) * 60) + 10;
+                    showLoading(`Mengekstrak berkas ke ZIP: ${i}/${flatFileList.length} ...`, pct);
+                    await new Promise(r => setTimeout(r, 0));
+                }
+            }
+
+            showLoading("Membuat file ZIP hasil kompresi...", 85);
+            const content = await zip.generateAsync({ type: "blob" }, (meta) => {
+                const subPct = Math.round(meta.percent * 0.15) + 85;
+                showLoading(`Mengemas arsip: ${Math.round(meta.percent)}%`, subPct);
+            });
+
+            showLoading("Mengunduh arsip...", 100);
+            const url = URL.createObjectURL(content);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `extracted_${unpacked ? "unpacked" : "packed"}.zip`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            hideLoading();
+        }
+
+        // ========================================================
+        // HIGHLY OPTIMIZED REBUILD ENGINE (DIRECT STREAM TO DISK)
+        // ========================================================
+        async function rebuildAndDownload() {
+            if (!flatFileList.length) return;
+
+            const isFileSystemAccessSupported = ('showSaveFilePicker' in window);
+
+            let confirmed = true;
+            if (!isFileSystemAccessSupported) {
+                confirmed = confirm(
+                    "Peringatan Sistem:\n\n" +
+                    "Browser Anda tidak mendukung 'Direct-to-Disk' streaming (FileSystem Access API).\n" +
+                    "Proses pembuatan file raksasa (>1 GB) terpaksa menggunakan metode cadangan RAM, yang biasanya memicu browser macet/freeze sementara saat proses download.\n\n" +
+                    "Sangat disarankan memakai Google Chrome atau Microsoft Edge versi Desktop untuk bebas dari lag.\n\n" +
+                    "Apakah Anda yakin ingin tetap melanjutkan?"
+                );
+            }
+
+            if (!confirmed) return;
+
+            showLoading("Mengkalkulasi koordinat biner baru...", 10);
+            await new Promise(r => setTimeout(r, 40));
+
+            // 1. Calculate new header & index size
+            let indexBytesNeeded = 16;
+            const encoder = new TextEncoder();
+            
+            const pathByteMap = flatFileList.map(item => {
+                const encoded = encoder.encode(item.data_path);
+                return { item, encoded, totalLength: encoded.length + 1 };
+            });
+
+            pathByteMap.forEach(p => {
+                indexBytesNeeded += 4; // Offset (Uint32)
+                indexBytesNeeded += 4; // Size (Uint32)
+                indexBytesNeeded += p.totalLength;
+            });
+
+            const headerSize = (indexBytesNeeded + 15) & ~15;
+
+            // 2. Compute offsets for each payload file (16-byte aligned)
+            let currentPayloadOffset = headerSize;
+            const finalMetaEntries = [];
+
+            for (let i = 0; i < flatFileList.length; i++) {
+                const item = flatFileList[i];
+                const pInfo = pathByteMap[i];
+                const fileBytes = getFileBytes(item);
+
+                currentPayloadOffset = (currentPayloadOffset + 15) & ~15;
+
+                finalMetaEntries.push({
+                    item,
+                    newOffset: currentPayloadOffset,
+                    size: fileBytes.length,
+                    data: fileBytes,
+                    pathBytes: pInfo.encoded
+                });
+
+                currentPayloadOffset += fileBytes.length;
+
+                if (i % 1000 === 0) {
+                    showLoading("Mengkalkulasi alokasi payload...", 20 + Math.round((i / flatFileList.length) * 20));
+                    await new Promise(r => setTimeout(r, 0));
+                }
+            }
+
+            const totalArchiveSize = currentPayloadOffset;
+
+            showLoading("Menyusun tabel indeks...", 50);
+            await new Promise(r => setTimeout(r, 40));
+
+            // 3. Build Header (Only 16 bytes allocated)
+            const headerBuffer = new ArrayBuffer(16);
+            const headerView = new DataView(headerBuffer);
+            const headerBytes = new Uint8Array(headerBuffer);
+            
+            for (let i = 0; i < 4; i++) {
+                headerBytes[i] = originalMagic.charCodeAt(i) || 66;
+            }
+            headerView.setUint32(4, totalArchiveSize, false);
+            headerView.setUint32(8, flatFileList.length, false);
+            headerView.setUint32(12, headerSize, false);
+
+            // 4. Build Index TOC (Only headerSize - 16 bytes allocated)
+            const indexTableSize = headerSize - 16;
+            const indexBuffer = new ArrayBuffer(indexTableSize);
+            const indexView = new DataView(indexBuffer);
+            const indexBytes = new Uint8Array(indexBuffer);
+
+            let indexPos = 0;
+            for (let i = 0; i < finalMetaEntries.length; i++) {
+                const meta = finalMetaEntries[i];
+                indexView.setUint32(indexPos, meta.newOffset, false);
+                indexPos += 4;
+                indexView.setUint32(indexPos, meta.size, false);
+                indexPos += 4;
+
+                indexBytes.set(meta.pathBytes, indexPos);
+                indexPos += meta.pathBytes.length;
+                indexBytes[indexPos] = 0;
+                indexPos += 1;
+            }
+
+            const blobChunks = [];
+            blobChunks.push(headerBytes);
+            blobChunks.push(indexBytes);
+
+            showLoading("Menata letak byte & alinyemen...", 70);
+            await new Promise(r => setTimeout(r, 40));
+
+            const paddingBuffers = {};
+            for (let p = 1; p <= 15; p++) {
+                paddingBuffers[p] = new Uint8Array(p);
+            }
+
+            // 5. Build chunks list sequentially with padding
+            let currentPos = headerSize;
+            for (let i = 0; i < finalMetaEntries.length; i++) {
+                const meta = finalMetaEntries[i];
+                
+                const paddingNeeded = meta.newOffset - currentPos;
+                if (paddingNeeded > 0) {
+                    blobChunks.push(paddingBuffers[paddingNeeded]);
+                }
+                
+                blobChunks.push(meta.data);
+                currentPos = meta.newOffset + meta.size;
+
+                if (i % 500 === 0) {
+                    showLoading("Menyusun potongan biner...", 70 + Math.round((i / finalMetaEntries.length) * 20));
+                    await new Promise(r => setTimeout(r, 0));
+                }
+            }
+
+            // ========================================================
+            // METODE UTAMA: STREAM DIRECT-TO-DISK (BEBAS LAG 100%)
+            // ========================================================
+            if (isFileSystemAccessSupported) {
+                try {
+                    const suggestedName = currentBigFileName.replace(".big", "") + "_mod.big";
+                    
+                    const handle = await window.showSaveFilePicker({
+                        suggestedName: suggestedName,
+                        types: [{
+                            description: 'BIG Archive File',
+                            accept: { 'application/octet-stream': ['.big'] }
+                        }]
+                    });
+
+                    showLoading("Membuka stream ke penyimpanan lokal...", 60);
+                    const writable = await handle.createWritable();
+
+                    showLoading("Menulis indeks awal...", 65);
+                    await writable.write(headerBytes);
+                    await writable.write(indexBytes);
+
+                    showLoading("Menulis payload langsung ke disk...", 70);
+                    let currentPos = headerSize;
+                    for (let i = 0; i < finalMetaEntries.length; i++) {
+                        const meta = finalMetaEntries[i];
+                        
+                        const paddingNeeded = meta.newOffset - currentPos;
+                        if (paddingNeeded > 0) {
+                            await writable.write(paddingBuffers[paddingNeeded]);
+                        }
+                        
+                        await writable.write(meta.data);
+                        currentPos = meta.newOffset + meta.size;
+
+                        if (i % 250 === 0) {
+                            showLoading(`Menulis biner langsung ke disk: ${i}/${finalMetaEntries.length}`, 70 + Math.round((i / finalMetaEntries.length) * 25));
+                            await new Promise(r => setTimeout(r, 0));
+                        }
+                    }
+
+                    showLoading("Menutup berkas & memverifikasi hasil...", 98);
+                    await writable.close();
+
+                    hideLoading();
+                    alert("Rebuild Berhasil! File .BIG modifikasi Anda telah ditulis langsung ke disk tanpa lag.");
+                    return;
+                } catch (err) {
+                    if (err.name === 'AbortError') {
+                        hideLoading();
+                        return;
+                    }
+                    console.warn("Gagal menulis direct-to-disk. Menggunakan sistem fallback...", err);
+                }
+            }
+
+            // ========================================================
+            // METODE CADANGAN: BLOB MEMORY ASSEMBLY (DENGAN GEJALA LAG)
+            // ========================================================
+            showLoading("Mengemas link unduhan...", 95);
+            await new Promise(r => setTimeout(r, 50));
+
+            const blob = new Blob(blobChunks, { type: "application/octet-stream" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = currentBigFileName.replace(".big", "") + "_mod.big";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            
+            setTimeout(() => {
+                URL.revokeObjectURL(url);
+            }, 8000);
+
+            hideLoading();
+            alert("File .BIG berhasil dibangun. Jika antarmuka browser sempat macet, hal tersebut wajar karena browser Anda tidak mendukung teknologi Direct Streaming.");
+        }
+
+        // Generate Hex Preview of 128 Bytes
+        function generateHexPreview(bytes) {
+            const previewBytes = bytes.subarray(0, 128);
+            let hexLines = [];
+            let rowHex = [];
+            let rowAscii = [];
+
+            for (let i = 0; i < previewBytes.length; i++) {
+                const b = previewBytes[i];
+                rowHex.push(b.toString(16).padStart(2, '0').toUpperCase());
+                rowAscii.push(b >= 32 && b <= 126 ? String.fromCharCode(b) : '.');
+
+                if ((i + 1) % 16 === 0 || i === previewBytes.length - 1) {
+                    if (rowHex.length < 16) {
+                        const diff = 16 - rowHex.length;
+                        for (let d = 0; d < diff; d++) {
+                            rowHex.push("  ");
+                            rowAscii.push(" ");
+                        }
+                    }
+                    const offsetStr = (Math.floor(i / 16) * 16).toString(16).padStart(4, '0').toUpperCase();
+                    const line = `<span class="text-zinc-500">${offsetStr}</span>  <span class="text-sky-400">${rowHex.slice(0, 8).join(' ')}</span>  <span class="text-indigo-400">${rowHex.slice(8).join(' ')}</span>  | <span class="text-emerald-400">${escapeHtml(rowAscii.join(''))}</span>`;
+                    hexLines.push(line);
+                    rowHex = [];
+                    rowAscii = [];
+                }
+            }
+            return hexLines.join('\n');
+        }
+
+        function escapeHtml(text) {
+            return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        }
+    </script>
+</body>
+</html>
